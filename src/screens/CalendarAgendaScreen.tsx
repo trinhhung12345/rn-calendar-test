@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
  View, Text, StyleSheet, FlatList, TouchableOpacity, 
-  SafeAreaView, StatusBar, ScrollView, LayoutAnimation, Platform, UIManager 
+  SafeAreaView, StatusBar, ScrollView, LayoutAnimation, Platform, UIManager, TouchableWithoutFeedback 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Check } from 'lucide-react-native';
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
@@ -40,11 +41,30 @@ const MOCK_EVENTS: Record<string, any[]> = {
   '2026-02-14': [{ id: 5 }],
 };
 
+// --- ĐỊNH NGHĨA CÁC CHẾ ĐỘ XEM ---
+const VIEW_MODES = [
+  { key: 'schedule', label: 'Lịch biểu' },
+  { key: 'day', label: 'Ngày' },
+  { key: 'week', label: 'Tuần' },
+  { key: 'month', label: 'Tháng' },
+];
+
 const CalendarAgendaScreen = () => {
   // 1. SỬA LỖI LOGIC NGÀY: 
  // Khởi tạo bằng ngày hiện tại thực tế thay vì hardcode
   // Nếu muốn test ngày 3/2/2026 thì dùng: useState('2026-02-03')
   const [selectedDateStr, setSelectedDateStr] = useState(dayjs().format('YYYY-MM-DD'));
+  
+  // --- STATE MỚI CHO DROPDOWN VIEW MODE ---
+  const [viewMode, setViewMode] = useState('schedule'); // Mặc định là 'Lịch biểu'
+  const [isViewModeDropdownOpen, setIsViewModeDropdownOpen] = useState(false);
+
+  // Hàm xử lý chọn mode
+  const handleSelectViewMode = (modeKey: string) => {
+    setViewMode(modeKey);
+    setIsViewModeDropdownOpen(false);
+    // Sau này bạn sẽ thêm logic chuyển đổi giao diện (Agenda/Grid) tại đây
+  };
   
   const [isCalendarOpen, setIsCalendarOpen] = useState(true); // Mặc định mở lịch để dễ nhìn
   const [currentCalendarDate, setCurrentCalendarDate] = useState(dayjs().format('YYYY-MM-DD'));
@@ -313,23 +333,69 @@ const CalendarAgendaScreen = () => {
       </View>
 
       {/* Filter Bar (Dropdowns) */}
-      <View style={styles.filterContainer}>
-        {/* Nút THÁNG 2: Bấm vào để xổ Calendar xuống */}
+      {/* Quan trọng: Thêm zIndex để dropdown hiển thị đè lên các thành phần khác */}
+      <View style={[styles.filterContainer, { zIndex: 100 }]}>
+        
+        {/* Nút Dropdown THÁNG (Bên trái) - Giữ nguyên logic cũ */}
         <TouchableOpacity style={styles.dropdownBtn} onPress={toggleCalendar}>
           <Text style={styles.dropdownText}>
             Tháng {dayjs(selectedDateStr).format('M')}
           </Text>
           <View style={{ marginLeft: 5 }}>
-            <Ionicons name={isCalendarOpen ? "chevron-up" : "chevron-down"} size={16} color="#666" />
+            <Ionicons 
+              name={isCalendarOpen ? "chevron-up" : "chevron-down"} 
+              size={16} color="#666" 
+            />
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.dropdownBtn}>
-          <Text style={styles.dropdownText}>Lịch biểu</Text>
-          <View style={{ marginLeft: 5 }}>
-            <Ionicons name="chevron-down" size={16} color="#666" />
-          </View>
-        </TouchableOpacity>
+        {/* --- NÚT DROPDOWN VIEW MODE (Bên phải - Cần sửa) --- */}
+        <View style={{ flex: 1 }}> 
+          {/* Bọc trong View để định vị absolute cho menu con */}
+          <TouchableOpacity 
+            style={styles.dropdownBtn} 
+            onPress={() => setIsViewModeDropdownOpen(!isViewModeDropdownOpen)}
+          >
+            {/* Hiển thị label tương ứng với key đang chọn */}
+            <Text style={styles.dropdownText}>
+              {VIEW_MODES.find(m => m.key === viewMode)?.label}
+            </Text>
+            <View style={{ marginLeft: 5 }}>
+              <Ionicons 
+                name={isViewModeDropdownOpen ? "chevron-up" : "chevron-down"} 
+                size={16} color="#666" 
+              />
+            </View>
+          </TouchableOpacity>
+
+          {/* --- MENU DROPDOWN (Chỉ hiện khi state mở) --- */}
+          {isViewModeDropdownOpen && (
+            <View style={styles.viewModeDropdown}>
+              {VIEW_MODES.map((item, index) => {
+                const isSelected = viewMode === item.key;
+                return (
+                  <TouchableOpacity 
+                    key={item.key} 
+                    style={[
+                      styles.viewModeItem,
+                      // Thêm đường kẻ dưới cho tất cả trừ item cuối cùng
+                      index < VIEW_MODES.length - 1 && styles.viewModeItemBorder
+                    ]}
+                    onPress={() => handleSelectViewMode(item.key)}
+                  >
+                    <Text style={styles.viewModeText}>{item.label}</Text>
+                    
+                    {/* Icon check bên phải nếu được chọn */}
+                    {isSelected && (
+                      <Check size={20} color="#000" />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </View>
+
       </View>
     </View>
   );
@@ -524,6 +590,40 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: '#1890FF', // Chữ xanh khi active
     fontWeight: '700',
+  },
+  
+  // --- STYLE MỚI CHO DROPDOWN VIEW MODE ---
+  viewModeDropdown: {
+    position: 'absolute',
+    top: 45, // Đẩy xuống dưới nút bấm (chiều cao nút khoảng 40-45)
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    // Tạo bóng đổ (Shadow) giống ảnh
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5, // Shadow cho Android
+    borderWidth: 1,
+    borderColor: '#eee',
+    zIndex: 999, // Đảm bảo nổi lên trên cùng
+  },
+  viewModeItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between', // Text trái, Icon phải
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  viewModeItemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0', // Đường kẻ mờ giữa các item
+  },
+  viewModeText: {
+    fontSize: 16,
+    color: '#333',
   },
 });
 

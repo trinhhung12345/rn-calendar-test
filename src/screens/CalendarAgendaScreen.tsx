@@ -10,6 +10,36 @@ import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 
+// --- CẤU HÌNH DAY VIEW ---
+const HOUR_HEIGHT = 60; // Chiều cao của 1 ô giờ (60px)
+const START_HOUR = 0;   // Bắt đầu từ 00:00
+const END_HOUR = 24;    // Kết thúc lúc 24:00
+
+// Hàm chuyển đổi giờ "HH:mm" thành phút (từ 0h)
+const parseTimeToMinutes = (timeStr: string) => {
+  if (!timeStr) return 0;
+  const [hourStr, minuteStr] = timeStr.split(':');
+  return parseInt(hourStr) * 60 + parseInt(minuteStr);
+};
+
+// Hàm lấy thông tin vị trí từ chuỗi thời gian "06:0 - 09:00"
+const getEventLayout = (timeRangeStr: string) => {
+  // timeRangeStr ví dụ: "06:00 - 09:00"
+  const [startStr, endStr] = timeRangeStr.split(' - ');
+  
+  const startMinutes = parseTimeToMinutes(startStr);
+  const endMinutes = parseTimeToMinutes(endStr);
+  
+  // Tính top: (số phút / 60) * chiều cao 1 giờ
+  const top = (startMinutes / 60) * HOUR_HEIGHT;
+  
+  // Tính height: ((phút kết thúc - phút bắt đầu) / 60) * chiều cao 1 giờ
+  const durationMinutes = endMinutes - startMinutes;
+  const height = (durationMinutes / 60) * HOUR_HEIGHT;
+
+  return { top, height };
+};
+
 // ... (Giữ nguyên phần config LocaleConfig và dayjs như cũ) ...
 LocaleConfig.locales['vi'] = {
   monthNames: ['Tháng 1','Tháng 2','Tháng 3','Tháng 4','Tháng 5','Tháng 6','Tháng 7','Tháng 8','Tháng 9','Tháng 10','Tháng 11','Tháng 12'],
@@ -40,7 +70,7 @@ const VIEW_MODES = [
   { key: 'schedule', label: 'Lịch biểu' },
   { key: 'day', label: 'Ngày' },
  { key: 'week', label: 'Tuần' },
-  { key: 'month', label: 'Tháng' },
+ { key: 'month', label: 'Tháng' },
 ];
 
 // ====================================================================
@@ -95,6 +125,62 @@ const AgendaItem = React.memo(({ item, isSelected, isToday }: any) => {
     prevProps.item.dateStr === nextProps.item.dateStr
   );
 });
+
+// Component DayView
+const DayView = ({ dateStr, events }: { dateStr: string, events: any[] }) => {
+  // Tạo mảng giờ từ 0 đến 23
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+
+  return (
+    <ScrollView style={styles.dayViewContainer} contentContainerStyle={{ paddingBottom: 50 }}>
+      <View style={styles.dayViewBody}>
+        
+        {/* CỘT GIỜ (Bên trái) */}
+        <View style={styles.timeColumn}>
+          {hours.map((hour) => (
+            <View key={hour} style={{ height: HOUR_HEIGHT, justifyContent: 'flex-start' }}>
+              {/* Hiển thị giờ dạng 01:00, 02:00... */}
+              <Text style={styles.timeLabel}>
+                {hour.toString().padStart(2, '0')}:00
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        {/* CỘT NỘI DUNG (Grid + Events) */}
+        <View style={styles.gridColumn}>
+          {/* Vẽ các đường kẻ ngang */}
+          {hours.map((hour) => (
+            <View key={`line-${hour}`} style={styles.gridLineContainer}>
+              <View style={styles.gridLine} />
+            </View>
+          ))}
+
+          {/* Render các Sự kiện (Absolute Position) */}
+          {events && events.map((event, index) => {
+            const { top, height } = getEventLayout(event.time);
+            return (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.dayEventCard,
+                  { top: top, height: height } // Vị trí tuyệt đối
+                ]}
+                activeOpacity={0.9}
+              >
+                <Text style={styles.dayEventTitle}>Phiên tuần: {event.time}</Text>
+                <Text style={styles.dayEventLocation}>{event.location}</Text>
+              </TouchableOpacity>
+            );
+          })}
+          
+          {/* (Tùy chọn) Đường kẻ hiện tại - Current Time Line */}
+          {/* Bạn có thể thêm logic tính giờ hiện tại để vẽ 1 đường đỏ ở đây */}
+        </View>
+      </View>
+    </ScrollView>
+  );
+};
 
 
 // ====================================================================
@@ -320,26 +406,35 @@ const CalendarAgendaScreen = () => {
         </View>
       )}
 
-      {/* 
-        4. TỐI ƯU HÓA: 
-        - Đã bỏ getItemLayout vì logic tính toán cũ quá nặng (chứa vòng lặp).
-        - Thêm onScrollToIndexFailed để fallback nếu scroll lỗi.
-        - Dùng keyExtractor chính xác.
-      */}
-      <FlatList
-        ref={flatListRef}
-        data={daysInMonth}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.dateStr}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        onScrollToIndexFailed={onScrollToIndexFailed} 
-        // getItemLayout={getItemLayout} <--- ĐÃ BỎ ĐỂ TRÁNH LAG
-        removeClippedSubviews={true} // Giúp performance trên Android
-        initialNumToRender={10}      // Chỉ render 10 item đầu tiên
-        maxToRenderPerBatch={10}
-        windowSize={5}               // Giảm vùng nhớ đệm
-      />
+      {/* --- NỘI DUNG CHÍNH --- */}
+      {viewMode === 'schedule' ? (
+        // LỊCH BIỂU (Code cũ)
+        <FlatList
+          ref={flatListRef}
+          data={daysInMonth}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.dateStr}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          onScrollToIndexFailed={onScrollToIndexFailed} 
+          // getItemLayout={getItemLayout} <--- ĐÃ BỎ ĐỂ TRÁNH LAG
+          removeClippedSubviews={true} // Giúp performance trên Android
+          initialNumToRender={10}      // Chỉ render 10 item đầu tiên
+          maxToRenderPerBatch={10}
+          windowSize={5}               // Giảm vùng nhớ đệm
+        />
+      ) : viewMode === 'day' ? (
+        // LỊCH NGÀY (Mới thêm)
+        <DayView 
+          dateStr={selectedDateStr} 
+          events={MOCK_EVENTS[selectedDateStr] || []} 
+        />
+      ) : (
+        // Placeholder cho Tuần/Tháng (Nếu chưa làm)
+        <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+           <Text>Chế độ xem {VIEW_MODES.find(v => v.key === viewMode)?.label} đang phát triển</Text>
+        </View>
+      )}
     </View>
   );
 };
@@ -414,6 +509,64 @@ const styles = StyleSheet.create({
   viewModeItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16 },
   viewModeItemBorder: { borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   viewModeText: { fontSize: 16, color: '#333' },
+  
+  // --- STYLES CHO DAY VIEW ---
+  dayViewContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  dayViewBody: {
+    flexDirection: 'row',
+    marginTop: 10,
+  },
+  timeColumn: {
+    width: 60, // Cột giờ rộng 60px
+    alignItems: 'center',
+    paddingTop: -10, // Căn chỉnh text giờ trùng với dòng kẻ
+  },
+  timeLabel: {
+    fontSize: 12,
+    color: '#333',
+    transform: [{ translateY: -8 }], // Đẩy text lên một chút để tâm text nằm giữa dòng kẻ
+  },
+  gridColumn: {
+    flex: 1, // Chiếm hết phần còn lại
+    position: 'relative', // Để con absolute canh theo cha
+  },
+  gridLineContainer: {
+    height: HOUR_HEIGHT,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0', // Màu kẻ ngang nhạt giống ảnh
+    width: '100%',
+  },
+  gridLine: {
+    // Nếu muốn grid line đứt đoạn hay style gì thêm thì sửa ở đây
+  },
+  
+  // Card sự kiện trong Day View (Giống hệt ảnh)
+  dayEventCard: {
+    position: 'absolute',
+    left: 2,   // Cách lề trái grid 1 chút
+    right: 10, // Cách lề phải màn hình 1 chút
+    backgroundColor: '#359EFF', // Màu xanh dương #359EFF hoặc #2196F3
+    borderRadius: 4,
+    padding: 8,
+    overflow: 'hidden',
+    // Border bên trái đậm hơn nếu muốn giống ảnh Google Calendar
+    borderLeftWidth: 4,
+    borderLeftColor: '#1976D2',
+  },
+  dayEventTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  dayEventLocation: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });
 
 export default CalendarAgendaScreen;

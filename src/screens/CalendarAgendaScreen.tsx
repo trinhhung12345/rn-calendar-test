@@ -1,322 +1,225 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { 
  View, Text, StyleSheet, FlatList, TouchableOpacity, 
-  SafeAreaView, StatusBar, ScrollView, LayoutAnimation, Platform, UIManager, TouchableWithoutFeedback 
+  SafeAreaView, StatusBar, ScrollView, LayoutAnimation, Platform, UIManager
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Check } from 'lucide-react-native';
+// Giả sử bạn dùng icon check, nếu không có lucide thì dùng Ionicons thay thế
+import { Ionicons as IconSet } from '@expo/vector-icons'; 
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 
-
-// Cấu hình tiếng Việt cho react-native-calendars
+// ... (Giữ nguyên phần config LocaleConfig và dayjs như cũ) ...
 LocaleConfig.locales['vi'] = {
   monthNames: ['Tháng 1','Tháng 2','Tháng 3','Tháng 4','Tháng 5','Tháng 6','Tháng 7','Tháng 8','Tháng 9','Tháng 10','Tháng 11','Tháng 12'],
   monthNamesShort: ['Thg 1','Thg 2','Thg 3','Thg 4','Thg 5','Thg 6','Thg 7','Thg 8','Thg 9','Thg 10','Thg 11','Thg 12'],
   dayNames: ['Chủ Nhật','Thứ Hai','Thứ Ba','Thứ Tư','Thứ Năm','Thứ Sáu','Thứ Bảy'],
-  dayNamesShort: ['CN','T2','T3','T4','T5','T6','T7'], // Giống thiết kế
+  dayNamesShort: ['CN','T2','T3','T4','T5','T6','T7'],
   today: 'Hôm nay'
 };
 LocaleConfig.defaultLocale = 'vi';
-
-// Cấu hình tiếng Việt cho dayjs
 dayjs.locale('vi');
 
-// Kích hoạt LayoutAnimation cho Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-
-// --- DỮ LIỆU MẪU (Cập nhật ngày 3/2 để test) ---
+// ... (Giữ nguyên MOCK_EVENTS và VIEW_MODES) ...
 const MOCK_EVENTS: Record<string, any[]> = {
   '2026-02-02': [{ id: 1, time: '06:00 - 09:00', location: 'Khu vực: A - Số điểm: 12' }],
-  // Thêm dữ liệu cho ngày 3/2 (Hôm nay)
   '2026-02-03': [
     { id: 2, time: '06:00 - 09:00', location: 'Khu vực: B - Số điểm: 10' },
     { id: 3, time: '14:00 - 16:00', location: 'Khu vực: C - Số điểm: 8' }
   ],
-  '2026-02-11': [{ id: 4, time: '14:00 - 16:00', location: 'Khu vực: A - Số điểm: 12' }],
+  '2026-02-1': [{ id: 4, time: '14:00 - 16:00', location: 'Khu vực: A - Số điểm: 12' }],
   '2026-02-14': [{ id: 5 }],
 };
 
-// --- ĐỊNH NGHĨA CÁC CHẾ ĐỘ XEM ---
 const VIEW_MODES = [
   { key: 'schedule', label: 'Lịch biểu' },
   { key: 'day', label: 'Ngày' },
-  { key: 'week', label: 'Tuần' },
+ { key: 'week', label: 'Tuần' },
   { key: 'month', label: 'Tháng' },
 ];
 
-const CalendarAgendaScreen = () => {
-  // 1. SỬA LỖI LOGIC NGÀY: 
- // Khởi tạo bằng ngày hiện tại thực tế thay vì hardcode
-  // Nếu muốn test ngày 3/2/2026 thì dùng: useState('2026-02-03')
-  const [selectedDateStr, setSelectedDateStr] = useState(dayjs().format('YYYY-MM-DD'));
-  
-  // --- STATE MỚI CHO DROPDOWN VIEW MODE ---
-  const [viewMode, setViewMode] = useState('schedule'); // Mặc định là 'Lịch biểu'
-  const [isViewModeDropdownOpen, setIsViewModeDropdownOpen] = useState(false);
+// ====================================================================
+// 1. TỐI ƯU HÓA: Tách Component con và dùng React.memo
+// Component này chỉ render lại khi props (isSelected, isToday, item) thay đổi
+// ====================================================================
+const AgendaItem = React.memo(({ item, isSelected, isToday }: any) => {
+  const { dayNum, dayOfWeek, events } = item;
 
-  // Hàm xử lý chọn mode
-  const handleSelectViewMode = (modeKey: string) => {
-    setViewMode(modeKey);
-    setIsViewModeDropdownOpen(false);
-    // Sau này bạn sẽ thêm logic chuyển đổi giao diện (Agenda/Grid) tại đây
-  };
-  
-  const [isCalendarOpen, setIsCalendarOpen] = useState(true); // Mặc định mở lịch để dễ nhìn
+  return (
+    <View style={styles.rowWrapper}>
+      <View style={styles.itemContainer}>
+        {/* CỘT TRÁI */}
+        <View style={styles.leftColumn}>
+          <View style={[styles.dateCircle, isSelected && styles.dateCircleActive]}>
+            <Text style={[styles.dateNumber, isSelected && styles.dateNumberActive]}>
+              {dayNum}
+            </Text>
+          </View>
+          <Text style={[styles.dayOfWeekText, isSelected && styles.dayOfWeekTextActive]}>
+            {dayOfWeek}
+          </Text>
+        </View>
+
+        {/* CỘT PHẢI */}
+        <View style={styles.rightColumn}>
+          {events ? events.map((event: any, index: number) => (
+              <View key={index} style={styles.eventCard}>
+                <Text style={styles.eventTextTitle}>Phiên tuần: {event.time}</Text>
+                <Text style={styles.eventTextLocation}>{event.location}</Text>
+              </View>
+            )) : <Text style={styles.emptyText}>Không có lịch tuần</Text>}
+        </View>
+      </View>
+
+      {/* GẠCH CHÂN */}
+      {isToday ? (
+        <View style={styles.todaySeparatorContainer}>
+           <View style={styles.todayDot} />
+           <View style={styles.todayLine} />
+        </View>
+      ) : (
+        <View style={styles.separatorLine} />
+      )}
+    </View>
+  );
+}, (prevProps, nextProps) => {
+  // Custom Comparison Function (Tùy chọn, để đảm bảo performance tối đa)
+  return (
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.isToday === nextProps.isToday &&
+    prevProps.item.dateStr === nextProps.item.dateStr
+  );
+});
+
+
+// ====================================================================
+// MAIN COMPONENT
+// ====================================================================
+const CalendarAgendaScreen = () => {
+  const [selectedDateStr, setSelectedDateStr] = useState(dayjs().format('YYYY-MM-DD'));
+  const [viewMode, setViewMode] = useState('schedule');
+  const [isViewModeDropdownOpen, setIsViewModeDropdownOpen] = useState(false);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(true);
   const [currentCalendarDate, setCurrentCalendarDate] = useState(dayjs().format('YYYY-MM-DD'));
-  
-  // State quản lý tháng hiện tại trên Calendar
   const [currentMonth, setCurrentMonth] = useState<dayjs.Dayjs>(dayjs());
 
-  // Ref để điều khiển cuộn
   const flatListRef = useRef<FlatList>(null);
 
   // --- LOGIC MARKED DATES ---
   const markedDates = useMemo(() => {
     let marks: Record<string, any> = {};
-    
-    // Đánh dấu chấm sự kiện (Màu xanh lá) cho tất cả các ngày có sự kiện
     Object.keys(MOCK_EVENTS).forEach(date => {
-      marks[date] = { 
-        ...marks[date],
-        marked: true, 
-        dotColor: 'green' 
-      };
+      marks[date] = { marked: true, dotColor: 'green' };
     });
 
     const todayStr = dayjs().format('YYYY-MM-DD');
 
-    // Logic: 
-    // 1. Mark ngày HÔM NAY: Màu #1890FF (Đậm)
-    marks[todayStr] = {
-      ...marks[todayStr], // Giữ lại các thuộc tính khác nếu có (ví dụ dotColor)
-      selected: true,
-      selectedColor: '#1890FF'
-    };
+    // Merge logic để tránh ghi đè
+    marks[todayStr] = { ...(marks[todayStr] || {}), selected: true, selectedColor: '#1890FF' };
 
-    // 2. Mark ngày ĐANG CHỌN (Nếu khác ngày hôm nay): Màu nhạt hơn
     if (selectedDateStr !== todayStr) {
-      marks[selectedDateStr] = {
-        ...marks[selectedDateStr], // Giữ lại các thuộc tính khác nếu có
-        selected: true,
-        selectedColor: '#91D5FF' // Màu xanh nhạt hơn
-      };
+      marks[selectedDateStr] = { ...(marks[selectedDateStr] || {}), selected: true, selectedColor: '#91D5FF' };
     }
-    
-    // Lưu ý: Nếu Selected == Today thì logic (1) sẽ đè lên -> Vẫn hiện màu đậm (Đúng yêu cầu)
-    
     return marks;
   }, [selectedDateStr]);
 
-  // --- LOGIC TẠO DANH SÁCH NGÀY TRONG THÁNG ---
+  // --- LOGIC DATA LIST ---
+  // useMemo này tốt, giữ nguyên
   const daysInMonth = useMemo(() => {
     const startOfMonth = currentMonth.startOf('month');
     const endOfMonth = currentMonth.endOf('month');
-    const daysArray: Array<{
-      date: dayjs.Dayjs;
-      dateStr: string;
-      dayNum: string;
-      dayOfWeek: string;
-      events: any;
-    }> = [];
+    const daysArray = [];
 
     let current = startOfMonth;
     while (current.isBefore(endOfMonth) || current.isSame(endOfMonth, 'day')) {
       const dateStr = current.format('YYYY-MM-DD');
       let dayOfWeek = current.format('dd'); 
-      if (dayOfWeek !== 'CN') {
-        dayOfWeek = dayOfWeek.replace('Th', 'T'); // Đảm bảo định dạng T2, T3
-      }
+      if (dayOfWeek !== 'CN') dayOfWeek = dayOfWeek.replace('Th', 'T');
       
-      const dayData = {
+      daysArray.push({
         date: current,
         dateStr,
         dayNum: current.format('D'),
         dayOfWeek,
         events: MOCK_EVENTS[dateStr] || null
-      };
-      
-      daysArray.push(dayData);
+      });
       current = current.add(1, 'day');
     }
     return daysArray;
   }, [currentMonth]);
 
-  // --- HANDLER: BẤM NÚT DROPDOWN ---
+  // --- HANDLERS ---
+  const handleSelectViewMode = (modeKey: string) => {
+    setViewMode(modeKey);
+    setIsViewModeDropdownOpen(false);
+  };
+
   const toggleCalendar = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setIsCalendarOpen(!isCalendarOpen);
   };
 
-  // --- HANDLER: CHỌN THÁNG TỪ CHIPS ---
-  const handleSelectMonthChip = (monthIndex: number) => {
-    // monthIndex: 1 -> Tháng 1, 2 -> Tháng 2
-    // Tạo ngày mới: Năm 2026, Tháng = monthIndex, Ngày 01
-    const year = dayjs(currentCalendarDate).year();
-    const newDate = dayjs(`${year}-${monthIndex}-01`).format('YYYY-MM-DD');
-    
-    handleMonthChange(newDate); // Sử dụng hàm xử lý chung
-  };
-
-  // --- 2. HÀM XỬ LÝ CHUYỂN THÁNG (Dùng chung cho cả Swipe Lịch và bấm Chip) ---
-  const handleMonthChange = (dateString: string) => { // dateString dạng 'YYYY-MM-DD'
+  const handleMonthChange = (dateString: string) => {
     const targetDate = dayjs(dateString);
     const today = dayjs();
     let newSelectedDate;
 
-    // Cập nhật tháng hiển thị trên Calendar Dropdown
     setCurrentCalendarDate(targetDate.format('YYYY-MM-DD'));
-    setCurrentMonth(targetDate); // Cập nhật tháng cho danh sách ngày
+    setCurrentMonth(targetDate);
 
-    // LOGIC CHECK NGÀY:
-    // Nếu tháng được chọn TRÙNG với tháng hiện tại thực tế -> Chọn ngày HÔM NAY
     if (targetDate.isSame(today, 'month')) {
       newSelectedDate = today.format('YYYY-MM-DD');
     } else {
-      // Nếu là tháng khác -> Chọn ngày MÙNG 1
       newSelectedDate = targetDate.startOf('month').format('YYYY-MM-DD');
     }
-
     setSelectedDateStr(newSelectedDate);
   };
 
-  // --- 3. HÀM XỬ LÝ SCROLL (Tự động cuộn khi selectedDateStr thay đổi) ---
+  // --- 2. TỐI ƯU HÓA: SCROLL ---
+  // Xử lý scroll an toàn hơn khi không dùng getItemLayout
   useEffect(() => {
     if (flatListRef.current && daysInMonth.length > 0) {
-      // Tìm vị trí (index) của ngày đang chọn trong danh sách tháng
       const index = daysInMonth.findIndex(d => d.dateStr === selectedDateStr);
-      
       if (index !== -1) {
-        // Scroll đến vị trí đó
         flatListRef.current.scrollToIndex({
             index,
             animated: true,
-            viewPosition: 0 // 0: Đầu danh sách, 0.5: Giữa
+            viewPosition: 0 
         });
       }
     }
   }, [selectedDateStr, daysInMonth]);
 
-  // Cần thêm hàm getItemLayout cho FlatList để scrollToIndex hoạt động mượt mà ko lỗi
-  const getItemLayout = (data: any, index: number) => {
-    // Tính toán chiều cao cho từng item dựa trên dữ liệu
-    // Vì không thể truy cập trực tiếp daysInMonth trong hàm này, nên ta sẽ tính toán dựa trên MOCK_EVENTS
-    const dateStr = daysInMonth[index].dateStr;
-    const events = MOCK_EVENTS[dateStr];
-    
-    // Chiều cao cố định cho cột trái (ngày/thứ)
-    const baseRowHeight = 84; // Tổng chiều cao cột ngày (bao gồm circle, text, padding)
-    
-    // Chiều cao cột phải (danh sách sự kiện)
-    // Padding trên dưới của item container
-    const paddingVertical = 24; // 12px * 2
-    
-    // Nếu có sự kiện, tính tổng chiều cao của các event cards
-    let eventsHeight = 0;
-    if (events) {
-      eventsHeight = events.length * 78; // Mỗi event card cao khoảng 78px
-    }
-    
-    // Tổng chiều cao của cột phải = padding + nội dung sự kiện
-    const rightColumnHeight = paddingVertical + eventsHeight;
-    
-    // Chiều cao thực tế của item là chiều cao lớn nhất giữa hai cột (do layout là flex row)
-    const itemHeight = Math.max(baseRowHeight, rightColumnHeight);
-    
-    // Chiều cao của separator line
-    const separatorHeight = 1;
-    
-    // Tổng chiều cao của item
-    const totalHeight = itemHeight + separatorHeight;
-    
-    // Tính offset dựa trên tổng chiều cao của các item trước đó
-    let offset = 0;
-    for (let i = 0; i < index; i++) {
-      const prevDateStr = daysInMonth[i].dateStr;
-      const prevEvents = MOCK_EVENTS[prevDateStr];
-      
-      // Tính toán tương tự như trên cho item trước
-      const prevBaseRowHeight = 84;
-      const prevPaddingVertical = 24;
-      let prevEventsHeight = 0;
-      if (prevEvents) {
-        prevEventsHeight = prevEvents.length * 78;
-      }
-      const prevRightColumnHeight = prevPaddingVertical + prevEventsHeight;
-      const prevItemHeight = Math.max(prevBaseRowHeight, prevRightColumnHeight);
-      const prevSeparatorHeight = 1;
-      
-      offset += prevItemHeight + prevSeparatorHeight;
-    }
-    
-    return { length: totalHeight, offset, index };
+  const onScrollToIndexFailed = (info: { index: number; highestMeasuredFrameIndex: number; averageItemLength: number }) => {
+    const wait = new Promise(resolve => setTimeout(resolve, 100));
+    wait.then(() => {
+      flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0 });
+    });
   };
 
-  // --- RENDER ITEM ---
-  const renderItem = ({ item }: any) => {
-    const dateStr = item.date.format('YYYY-MM-DD');
-    const dayNum = item.date.format('D');
-    let dayOfWeek = item.date.format('dd'); 
-    if (dayOfWeek !== 'CN') dayOfWeek = dayOfWeek.replace('Th', 'T');
-
-    const events = MOCK_EVENTS[dateStr];
-    
-    // --- SỬA LOGIC HIỂN THỊ TẠI ĐÂY ---
-    const isSelected = dateStr === selectedDateStr; // Chỉ true khi user click vào ngày này
-    const isToday = item.date.isSame(dayjs(), 'day'); // True nếu là hôm nay
+  // --- 3. TỐI ƯU HÓA: renderItem ---
+  // Sử dụng useCallback để không tạo function mới mỗi lần render
+  const renderItem = useCallback(({ item }: any) => {
+    const isSelected = item.dateStr === selectedDateStr;
+    const isToday = item.date.isSame(dayjs(), 'day');
 
     return (
-      <View style={styles.rowWrapper}>
-        <View style={styles.itemContainer}>
-          {/* CỘT TRÁI: NGÀY */}
-          <View style={styles.leftColumn}>
-            {/* 2. SỬA LỖI VÒNG TRÒN: Chỉ hiện khi isSelected = true */}
-            <View style={[styles.dateCircle, isSelected && styles.dateCircleActive]}>
-              <Text style={[styles.dateNumber, isSelected && styles.dateNumberActive]}>
-                {dayNum}
-              </Text>
-            </View>
-            
-            {/* Text thứ: Nếu Selected thì xanh đậm, không thì xám */}
-            <Text style={[styles.dayOfWeekText, isSelected && styles.dayOfWeekTextActive]}>
-              {dayOfWeek}
-            </Text>
-          </View>
-
-          {/* CỘT PHẢI: LIST EVENT */}
-          <View style={styles.rightColumn}>
-            {events ? events.map((event: any, index: number) => (
-                <View key={index} style={styles.eventCard}>
-                  <Text style={styles.eventTextTitle}>Phiên tuần: {event.time}</Text>
-                  <Text style={styles.eventTextLocation}>{event.location}</Text>
-                </View>
-              )) : <Text style={styles.emptyText}>Không có lịch tuần</Text>}
-          </View>
-        </View>
-
-        {/* --- GẠCH CHÂN --- */}
-        {/* Nếu là Hôm Nay: Hiện gạch đậm + chấm tròn (Bất kể có đang select hay không) */}
-        {isToday ? (
-          <View style={styles.todaySeparatorContainer}>
-             <View style={styles.todayDot} />
-             <View style={styles.todayLine} />
-          </View>
-        ) : (
-          // Ngày thường: Gạch mờ
-          <View style={styles.separatorLine} />
-        )}
-      </View>
+      <AgendaItem 
+        item={item} 
+        isSelected={isSelected} 
+        isToday={isToday} 
+      />
     );
-  };
+  }, [selectedDateStr]); // Chỉ tạo lại hàm này khi ngày chọn thay đổi
 
-  // --- HEADER & FILTER ---
+  // ... (Phần renderHeader giữ nguyên) ...
   const renderHeader = () => (
     <View>
-      {/* Blue Header */}
       <View style={styles.header}>
         <View style={styles.userInfo}>
             <View style={styles.avatarIcon}>
@@ -332,43 +235,22 @@ const CalendarAgendaScreen = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Filter Bar (Dropdowns) */}
-      {/* Quan trọng: Thêm zIndex để dropdown hiển thị đè lên các thành phần khác */}
       <View style={[styles.filterContainer, { zIndex: 100 }]}>
-        
-        {/* Nút Dropdown THÁNG (Bên trái) - Giữ nguyên logic cũ */}
         <TouchableOpacity style={styles.dropdownBtn} onPress={toggleCalendar}>
-          <Text style={styles.dropdownText}>
-            Tháng {dayjs(selectedDateStr).format('M')}
-          </Text>
+          <Text style={styles.dropdownText}>Tháng {dayjs(selectedDateStr).format('M')}</Text>
           <View style={{ marginLeft: 5 }}>
-            <Ionicons 
-              name={isCalendarOpen ? "chevron-up" : "chevron-down"} 
-              size={16} color="#666" 
-            />
+            <Ionicons name={isCalendarOpen ? "chevron-up" : "chevron-down"} size={16} color="#666" />
           </View>
         </TouchableOpacity>
 
-        {/* --- NÚT DROPDOWN VIEW MODE (Bên phải - Cần sửa) --- */}
         <View style={{ flex: 1 }}> 
-          {/* Bọc trong View để định vị absolute cho menu con */}
-          <TouchableOpacity 
-            style={styles.dropdownBtn} 
-            onPress={() => setIsViewModeDropdownOpen(!isViewModeDropdownOpen)}
-          >
-            {/* Hiển thị label tương ứng với key đang chọn */}
-            <Text style={styles.dropdownText}>
-              {VIEW_MODES.find(m => m.key === viewMode)?.label}
-            </Text>
+          <TouchableOpacity style={styles.dropdownBtn} onPress={() => setIsViewModeDropdownOpen(!isViewModeDropdownOpen)}>
+            <Text style={styles.dropdownText}>{VIEW_MODES.find(m => m.key === viewMode)?.label}</Text>
             <View style={{ marginLeft: 5 }}>
-              <Ionicons 
-                name={isViewModeDropdownOpen ? "chevron-up" : "chevron-down"} 
-                size={16} color="#666" 
-              />
+              <Ionicons name={isViewModeDropdownOpen ? "chevron-up" : "chevron-down"} size={16} color="#666" />
             </View>
           </TouchableOpacity>
 
-          {/* --- MENU DROPDOWN (Chỉ hiện khi state mở) --- */}
           {isViewModeDropdownOpen && (
             <View style={styles.viewModeDropdown}>
               {VIEW_MODES.map((item, index) => {
@@ -376,26 +258,17 @@ const CalendarAgendaScreen = () => {
                 return (
                   <TouchableOpacity 
                     key={item.key} 
-                    style={[
-                      styles.viewModeItem,
-                      // Thêm đường kẻ dưới cho tất cả trừ item cuối cùng
-                      index < VIEW_MODES.length - 1 && styles.viewModeItemBorder
-                    ]}
+                    style={[styles.viewModeItem, index < VIEW_MODES.length - 1 && styles.viewModeItemBorder]}
                     onPress={() => handleSelectViewMode(item.key)}
                   >
                     <Text style={styles.viewModeText}>{item.label}</Text>
-                    
-                    {/* Icon check bên phải nếu được chọn */}
-                    {isSelected && (
-                      <Check size={20} color="#000" />
-                    )}
+                    {isSelected && <IconSet name="checkmark" size={20} color="#000" />}
                   </TouchableOpacity>
                 );
               })}
             </View>
           )}
         </View>
-
       </View>
     </View>
   );
@@ -407,59 +280,38 @@ const CalendarAgendaScreen = () => {
       
       {renderHeader()}
 
-      {/* --- KHỐI LỊCH MỞ RỘNG (EXPANDABLE) --- */}
       {isCalendarOpen && (
         <View style={styles.calendarContainer}>
-          {/* 1. Lịch tháng */}
           <Calendar
-            key={currentCalendarDate} // Thêm key để force update khi thay đổi tháng
+            key={currentCalendarDate}
             current={currentCalendarDate}
-            
-            // Khi bấm chọn ngày cụ thể trên Dropdown
-            onDayPress={day => {
-              setSelectedDateStr(day.dateString);
-            }}
-
-            // Khi vuốt trái/phải trên Calendar -> Gọi hàm xử lý chung
-            onMonthChange={month => {
-              handleMonthChange(month.dateString);
-            }}
-
+            onDayPress={day => setSelectedDateStr(day.dateString)}
+            onMonthChange={month => handleMonthChange(month.dateString)}
             markedDates={markedDates}
-            // markingType={'simple'} // Quay về simple để hỗ trợ dot mark
-            
             theme={{
               todayTextColor: '#1890FF',
               arrowColor: '#1890FF',
-              monthTextColor: '#33',
+              monthTextColor: '#333',
               textMonthFontWeight: 'bold',
-              // ... giữ các theme cũ
             }}
             enableSwipeMonths={true}
           />
 
-          {/* 2. List Chips chọn tháng (Thg 1, Thg 2...) */}
           <View style={styles.chipsContainer}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => {
-                 // Kiểm tra xem chip này có trùng với tháng đang hiển thị ko
                  const isActive = dayjs(currentCalendarDate).month() + 1 === month;
-                 
                  return (
                    <TouchableOpacity 
                       key={month} 
-                      // Style đổi màu nếu Active
                       style={[styles.chipBtn, isActive && styles.chipBtnActive]} 
                       onPress={() => {
-                        // Tạo ngày giả định: Năm hiện tại - Tháng chọn - Ngày 01
                         const year = dayjs(currentCalendarDate).year();
                         const dateStr = dayjs(`${year}-${month}-01`).format('YYYY-MM-DD');
                         handleMonthChange(dateStr);
                       }}
                    >
-                     <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
-                       Thg {month}
-                     </Text>
+                     <Text style={[styles.chipText, isActive && styles.chipTextActive]}>Thg {month}</Text>
                    </TouchableOpacity>
                  )
               })}
@@ -468,22 +320,31 @@ const CalendarAgendaScreen = () => {
         </View>
       )}
 
-      {/* --- DANH SÁCH LỊCH BIỂU (AGENDA) --- */}
+      {/* 
+        4. TỐI ƯU HÓA: 
+        - Đã bỏ getItemLayout vì logic tính toán cũ quá nặng (chứa vòng lặp).
+        - Thêm onScrollToIndexFailed để fallback nếu scroll lỗi.
+        - Dùng keyExtractor chính xác.
+      */}
       <FlatList
-        ref={flatListRef} // Gắn ref
+        ref={flatListRef}
         data={daysInMonth}
         renderItem={renderItem}
         keyExtractor={(item) => item.dateStr}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        getItemLayout={getItemLayout} // Gắn layout fix lỗi scroll
-        
-        // Loại bỏ initialScrollIndex nếu dùng useEffect scroll ở trên để tránh xung đột
+        onScrollToIndexFailed={onScrollToIndexFailed} 
+        // getItemLayout={getItemLayout} <--- ĐÃ BỎ ĐỂ TRÁNH LAG
+        removeClippedSubviews={true} // Giúp performance trên Android
+        initialNumToRender={10}      // Chỉ render 10 item đầu tiên
+        maxToRenderPerBatch={10}
+        windowSize={5}               // Giảm vùng nhớ đệm
       />
     </View>
   );
 };
 
+// ... (Giữ nguyên phần styles) ...
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   header: {
@@ -494,7 +355,6 @@ const styles = StyleSheet.create({
   avatarIcon: { marginRight: 10 },
   welcomeText: { color: '#BBDEFB', fontSize: 12 },
   userName: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  
   filterContainer: {
     flexDirection: 'row', padding: 16, backgroundColor: '#fff', gap: 12, zIndex: 2,
   },
@@ -504,28 +364,14 @@ const styles = StyleSheet.create({
     paddingVertical: 10, paddingHorizontal: 12, backgroundColor: '#fff',
   },
   dropdownText: { fontSize: 15, color: '#333' },
-
-  // --- LIST ITEM STYLES ---
-  listContent: {
-    paddingBottom: 20,
-    backgroundColor: '#fff',
-  },
-  rowWrapper: {
-    backgroundColor: '#fff',
-  },
-  itemContainer: {
-    flexDirection: 'row',
-    paddingVertical: 12, // Tăng khoảng cách trên dưới chút cho thoáng
-    paddingHorizontal: 16,
-  },
-  
-  // --- STYLE CHO CỘT NGÀY (LEFT) ---
+  listContent: { paddingBottom: 20, backgroundColor: '#fff' },
+  rowWrapper: { backgroundColor: '#fff' },
+  itemContainer: { flexDirection: 'row', paddingVertical: 12, paddingHorizontal: 16 },
   leftColumn: { width: 50, alignItems: 'center', marginRight: 12 },
   dateCircle: {
     width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center',
     marginBottom: 4, backgroundColor: 'transparent',
   },
-  // Style Active chỉ dành cho SELECTED DATE
   dateCircleActive: {
     backgroundColor: '#359EFF', shadowColor: "#359EFF", shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3, shadowRadius: 4, elevation: 4,
@@ -534,7 +380,6 @@ const styles = StyleSheet.create({
   dateNumberActive: { color: '#fff' },
   dayOfWeekText: { fontSize: 13, color: '#757575', fontWeight: '500' },
   dayOfWeekTextActive: { color: '#359EFF', fontWeight: '700' },
-
   rightColumn: { flex: 1, paddingTop: 4 },
   emptyText: { fontSize: 14, color: '#BDBDBD', marginTop: 8 },
   eventCard: {
@@ -543,88 +388,32 @@ const styles = StyleSheet.create({
   },
   eventTextTitle: { color: '#FFFFFF', fontSize: 14, fontWeight: '700', marginBottom: 4 },
   eventTextLocation: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-  
-  // SEPARATOR
   separatorLine: { height: 1, backgroundColor: '#E0E0E0', marginLeft: 78 },
-  
-  // TODAY INDICATOR (Luôn hiện ở ngày hôm nay)
   todaySeparatorContainer: { flexDirection: 'row', alignItems: 'center', paddingLeft: 16, marginTop: 4 },
   todayDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#359EFF', marginRight: 8 },
   todayLine: { flex: 1, height: 2, backgroundColor: '#359EFF' },
-  
-  // --- HIỆU ỨNG NỀN CHO NGÀY HÔM NAY (OPTIONAL) ---
-  // Nếu muốn ngày hôm nay có nền hơi sáng lên chút xíu cho dễ nhận biết
-  todayBackground: {
-    backgroundColor: '#F7F9FC', // Màu xám xanh cực nhạt
-  },
-  
-  // --- STYLE CHO CALENDAR EXPAND ---
   calendarContainer: {
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
     paddingBottom: 10,
   },
-  chipsContainer: {
-    marginTop: 10,
-    paddingHorizontal: 10,
-  },
+  chipsContainer: { marginTop: 10, paddingHorizontal: 10 },
   chipBtn: {
-    borderWidth: 1,
-    borderColor: '#E0E0E0', // Viền nhạt mặc định
-    borderRadius: 20, // Bo tròn nhiều hơn cho giống chip
-    paddingVertical: 6,
-    paddingHorizontal: 16,
-    marginRight: 8,
-    backgroundColor: '#F5F5F5', // Nền xám nhạt mặc định
+    borderWidth: 1, borderColor: '#E0E0E0', borderRadius: 20,
+    paddingVertical: 6, paddingHorizontal: 16, marginRight: 8, backgroundColor: '#F5F5F5',
   },
-  chipBtnActive: {
-    borderColor: '#1890FF',
-    backgroundColor: '#E6F7FF', // Nền xanh rất nhạt
-  },
-  chipText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#666',
-  },
-  chipTextActive: {
-    color: '#1890FF', // Chữ xanh khi active
-    fontWeight: '700',
-  },
-  
-  // --- STYLE MỚI CHO DROPDOWN VIEW MODE ---
+  chipBtnActive: { borderColor: '#1890FF', backgroundColor: '#E6F7FF' },
+  chipText: { fontSize: 14, fontWeight: '500', color: '#666' },
+  chipTextActive: { color: '#1890FF', fontWeight: '700' },
   viewModeDropdown: {
-    position: 'absolute',
-    top: 45, // Đẩy xuống dưới nút bấm (chiều cao nút khoảng 40-45)
-    left: 0,
-    right: 0,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    // Tạo bóng đổ (Shadow) giống ảnh
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5, // Shadow cho Android
-    borderWidth: 1,
-    borderColor: '#eee',
-    zIndex: 999, // Đảm bảo nổi lên trên cùng
+    position: 'absolute', top: 45, left: 0, right: 0, backgroundColor: '#fff',
+    borderRadius: 8, shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2, shadowRadius: 8, elevation: 5, borderWidth: 1, borderColor: '#eee', zIndex: 999,
   },
-  viewModeItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between', // Text trái, Icon phải
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  viewModeItemBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0', // Đường kẻ mờ giữa các item
-  },
-  viewModeText: {
-    fontSize: 16,
-    color: '#333',
-  },
+  viewModeItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16 },
+  viewModeItemBorder: { borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  viewModeText: { fontSize: 16, color: '#333' },
 });
 
 export default CalendarAgendaScreen;

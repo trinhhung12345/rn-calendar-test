@@ -182,10 +182,59 @@ const CalendarAgendaScreen = () => {
   }, [selectedDateStr, daysInMonth]);
 
   // Cần thêm hàm getItemLayout cho FlatList để scrollToIndex hoạt động mượt mà ko lỗi
-  const getItemLayout = (data: any, index: number) => (
-    // Giả sử mỗi item cao khoảng 120px (ước lượng từ style padding + content)
-    { length: 120, offset: 120 * index, index }
-  );
+  const getItemLayout = (data: any, index: number) => {
+    // Tính toán chiều cao cho từng item dựa trên dữ liệu
+    // Vì không thể truy cập trực tiếp daysInMonth trong hàm này, nên ta sẽ tính toán dựa trên MOCK_EVENTS
+    const dateStr = daysInMonth[index].dateStr;
+    const events = MOCK_EVENTS[dateStr];
+    
+    // Chiều cao cố định cho cột trái (ngày/thứ)
+    const baseRowHeight = 84; // Tổng chiều cao cột ngày (bao gồm circle, text, padding)
+    
+    // Chiều cao cột phải (danh sách sự kiện)
+    // Padding trên dưới của item container
+    const paddingVertical = 24; // 12px * 2
+    
+    // Nếu có sự kiện, tính tổng chiều cao của các event cards
+    let eventsHeight = 0;
+    if (events) {
+      eventsHeight = events.length * 78; // Mỗi event card cao khoảng 78px
+    }
+    
+    // Tổng chiều cao của cột phải = padding + nội dung sự kiện
+    const rightColumnHeight = paddingVertical + eventsHeight;
+    
+    // Chiều cao thực tế của item là chiều cao lớn nhất giữa hai cột (do layout là flex row)
+    const itemHeight = Math.max(baseRowHeight, rightColumnHeight);
+    
+    // Chiều cao của separator line
+    const separatorHeight = 1;
+    
+    // Tổng chiều cao của item
+    const totalHeight = itemHeight + separatorHeight;
+    
+    // Tính offset dựa trên tổng chiều cao của các item trước đó
+    let offset = 0;
+    for (let i = 0; i < index; i++) {
+      const prevDateStr = daysInMonth[i].dateStr;
+      const prevEvents = MOCK_EVENTS[prevDateStr];
+      
+      // Tính toán tương tự như trên cho item trước
+      const prevBaseRowHeight = 84;
+      const prevPaddingVertical = 24;
+      let prevEventsHeight = 0;
+      if (prevEvents) {
+        prevEventsHeight = prevEvents.length * 78;
+      }
+      const prevRightColumnHeight = prevPaddingVertical + prevEventsHeight;
+      const prevItemHeight = Math.max(prevBaseRowHeight, prevRightColumnHeight);
+      const prevSeparatorHeight = 1;
+      
+      offset += prevItemHeight + prevSeparatorHeight;
+    }
+    
+    return { length: totalHeight, offset, index };
+  };
 
   // --- RENDER ITEM ---
   const renderItem = ({ item }: any) => {

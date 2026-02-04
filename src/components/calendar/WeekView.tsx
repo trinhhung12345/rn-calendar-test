@@ -4,7 +4,7 @@ import {
   Platform, UIManager
 } from 'react-native';
 import dayjs from 'dayjs';
-import { HOUR_HEIGHT } from '../../utils/calendar/timeUtils';
+import { HOUR_HEIGHT, getEventLayout } from '../../utils/calendar/timeUtils';
 
 // Kích hoạt layout animation trên Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -176,30 +176,6 @@ const WeekView: React.FC<WeekViewProps> = ({ selectedDateStr, eventsData, onWeek
   );
 };
 
-// Hàm lấy thông tin vị trí từ chuỗi thời gian "06:0 - 09:00"
-const getEventLayout = (timeRangeStr: string) => {
-  // timeRangeStr ví dụ: "06:00 - 09:00"
-  const [startStr, endStr] = timeRangeStr.split(' - ');
-  
-  const startMinutes = parseTimeToMinutes(startStr);
-  const endMinutes = parseTimeToMinutes(endStr);
-  
-  // Tính top: (số phút / 60) * chiều cao 1 giờ
-  const top = (startMinutes / 60) * HOUR_HEIGHT;
-  
-  // Tính height: ((phút kết thúc - phút bắt đầu) / 60) * chiều cao 1 giờ
-  const durationMinutes = endMinutes - startMinutes;
-  const height = (durationMinutes / 60) * HOUR_HEIGHT;
-
-  return { top, height };
-};
-
-// Hàm chuyển đổi giờ "HH:mm" thành phút (từ 0h)
-const parseTimeToMinutes = (timeStr: string) => {
-  if (!timeStr) return 0;
-  const [hourStr, minuteStr] = timeStr.split(':');
-  return parseInt(hourStr) * 60 + parseInt(minuteStr);
-};
 
 export default WeekView;
 

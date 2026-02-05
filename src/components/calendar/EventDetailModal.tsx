@@ -103,6 +103,16 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     return dayjs(date).format('DD/MM/YYYY HH:mm');
   };
 
+  // Debug logging
+  console.log("EventDetailModal - originalSession:", originalSession);
+  console.log("EventDetailModal - originalSession type:", typeof originalSession);
+  if (originalSession) {
+    console.log("EventDetailModal - originalSession keys:", Object.keys(originalSession));
+    console.log("EventDetailModal - originalSession.patrolLogs:", originalSession.patrolLogs);
+    console.log("EventDetailModal - originalSession.employees:", originalSession.employees);
+    console.log("EventDetailModal - originalSession.status:", originalSession.status);
+  }
+
   return (
     <Modal
       animationType="slide"
@@ -121,7 +131,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
           </View>
 
           {/* Content */}
-          <ScrollView style={styles.content}>
+          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             {/* Event name */}
             <View style={styles.section}>
               <Text style={styles.eventName}>{eventName || 'Không có tên sự kiện'}</Text>
@@ -249,7 +259,8 @@ const styles = StyleSheet.create({
     padding: 5,
  },
   content: {
-    flex: 1,
+    flexGrow: 1,
+    marginBottom: 20,
   },
   section: {
     marginBottom: 20,

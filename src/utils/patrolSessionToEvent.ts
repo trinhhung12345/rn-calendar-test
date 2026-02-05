@@ -14,8 +14,8 @@ export const patrolSessionToCalendarEvent = (session: PatrolSession): ExtendedCa
   // Convert the patrol session data to the format expected by the calendar components
   // Handle multi-day events by creating separate events for each day
   
-  // Use planStartTime if startDate is null
-  const startDate = session.startDate ? dayjs(session.startDate) : dayjs(session.planStartTime);
+  // Use planStartTime for the actual event date (this is when the patrol session occurs)
+  const startDate = dayjs(session.planStartTime);
   const endDate = dayjs(session.planEndTime);
   
   // Calculate the number of days the session spans

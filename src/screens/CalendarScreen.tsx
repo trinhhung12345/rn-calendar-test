@@ -56,7 +56,7 @@ const CalendarScreen = () => {
     setSelectedDate(date);
   };
 
-  const handlePressEvent = (event: CustomEvent) => {
+ const handlePressEvent = (event: CustomEvent) => {
     alert(`Sự kiện: ${event.title}\nThời gian: ${dayjs(event.start).format('HH:mm')} - ${dayjs(event.end).format('HH:mm')}`);
   };
 

@@ -5,6 +5,11 @@ import {
 } from 'react-native';
 import dayjs from 'dayjs';
 import { HOUR_HEIGHT, getEventLayout, parseTimeToMinutes } from '../../utils/calendar/timeUtils';
+import { ExtendedCalendarEvent } from '../../utils/patrolSessionToEvent';
+import EventDetailModal from '../calendar/EventDetailModal';
+
+// Type alias for backward compatibility
+type CalendarEvent = ExtendedCalendarEvent;
 
 // Kích hoạt layout animation trên Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -13,12 +18,14 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 interface DayViewProps {
  dateStr: string;
-  events: any[];
+  events: CalendarEvent[];
 }
 
 const DayView: React.FC<DayViewProps> = ({ dateStr, events }) => {
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const [currentTime, setCurrentTime] = useState(dayjs());
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
   // Cập nhật thời gian mỗi phút
   useEffect(() => {
@@ -33,87 +40,110 @@ const DayView: React.FC<DayViewProps> = ({ dateStr, events }) => {
   const currentMinute = currentTime.minute();
   const currentTopPosition = (currentHour + currentMinute / 60) * HOUR_HEIGHT;
 
+  const handleEventPress = (event: CalendarEvent) => {
+    if (event.originalSession) {
+      setSelectedEvent(event);
+      setModalVisible(true);
+    }
+  };
+
   return (
-    <ScrollView 
-      style={styles.dayViewContainer} 
-      contentContainerStyle={{ paddingBottom: 50 }}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.dayViewBody}>
-        
-        {/* --- CỘT GIỜ (TRÁI) --- */}
-        <View style={styles.timeColumn}>
-          {hours.map((hour) => (
-            <View key={hour} style={[styles.timeRowWrapper, { height: HOUR_HEIGHT }]}>
-              <Text style={styles.timeLabel}>
-                {hour.toString().padStart(2, '0')}:00
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        {/* --- CỘT TIMELINE (PHẢI) --- */}
-        <View style={styles.timelineColumn}>
+    <>
+      <ScrollView 
+        style={styles.dayViewContainer} 
+        contentContainerStyle={{ paddingBottom: 50 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.dayViewBody}>
           
-          {/* 1. LƯỚI NỀN (GRID) */}
-          {hours.map((hour) => (
-            <View key={hour} style={[styles.timelineRow, { height: HOUR_HEIGHT }]}>
-              {/* Đường kẻ dọc (Trục) */}
-              <View style={styles.verticalAxisLine} />
-              
-              {/* Chấm tròn giao điểm */}
-              <View style={styles.intersectDot} />
-              
-              {/* Đường kẻ ngang (Căn ở top = 0 để align với label giờ) */}
-              <View style={styles.horizontalGridLine} />
-            </View>
-          ))}
-
-          {/* 2. ĐƯỜNG GIỜ HIỆN TẠI (CURRENT TIME) */}
-          <View 
-            style={[
-              styles.currentTimeIndicator,
-              { top: currentTopPosition }
-            ]}
-          >
-            <View style={styles.currentTimeDot} />
-            <View style={styles.currentTimeLine} />
+          {/* --- CỘT GIỜ (TRÁI) --- */}
+          <View style={styles.timeColumn}>
+            {hours.map((hour) => (
+              <View key={hour} style={[styles.timeRowWrapper, { height: HOUR_HEIGHT }]}>
+                <Text style={styles.timeLabel}>
+                  {hour.toString().padStart(2, '0')}:00
+                </Text>
+              </View>
+            ))}
           </View>
 
-          {/* 3. SỰ KIỆN (EVENTS) - Có chỉnh chiều cao để cách đường kẻ 9px */}
-          {events && events.map((event, index) => {
-            // Lấy vị trí gốc
-            const { top, height } = getEventLayout(event.time);
+          {/* --- CỘT TIMELINE (PHẢI) --- */}
+          <View style={styles.timelineColumn}>
             
-            // TÍNH TOÁN LẠI VỊ TRÍ & CHIỀU CAO
-            // Trừ đi 9px tổng (4.5px trên + 4.5px dưới) để tạo khoảng cách với các đường kẻ ngang
-            const visualTop = top + 4.5; 
-            const visualHeight = height - 9;
+            {/* 1. LƯỚI NỀN (GRID) */}
+            {hours.map((hour) => (
+              <View key={hour} style={[styles.timelineRow, { height: HOUR_HEIGHT }]}>
+                {/* Đường kẻ dọc (Trục) */}
+                <View style={styles.verticalAxisLine} />
+                
+                {/* Chấm tròn giao điểm */}
+                <View style={styles.intersectDot} />
+                
+                {/* Đường kẻ ngang (Căn ở top = 0 để align với label giờ) */}
+                <View style={styles.horizontalGridLine} />
+              </View>
+            ))}
 
-            // Nếu chiều cao sau khi trừ còn dương thì mới render (tránh lỗi layout)
-            if (visualHeight <= 0) return null;
+            {/* 2. ĐƯỜNG GIỜ HIỆN TẠI (CURRENT TIME) */}
+            <View 
+              style={[
+                styles.currentTimeIndicator,
+                { top: currentTopPosition }
+              ]}
+            >
+              <View style={styles.currentTimeDot} />
+              <View style={styles.currentTimeLine} />
+            </View>
 
-            return (
-              <TouchableOpacity
-                key={index}
-                style={[
-                  styles.dayEventCard,
-                  { 
-                    top: visualTop, 
-                    height: visualHeight 
-                  }
-                ]}
-                activeOpacity={0.9}
-              >
-                <Text style={styles.dayEventTitle}>Phần tuân: {event.time}</Text>
-                <Text style={styles.dayEventLocation}>{event.location}</Text>
-              </TouchableOpacity>
-            );
-          })}
+            {/* 3. SỰ KIỆN (EVENTS) - Có chỉnh chiều cao để cách đường kẻ 9px */}
+            {events && events.map((event, index) => {
+              // Lấy vị trí gốc - sử dụng layoutTime nếu có, nếu không thì dùng time
+              const layoutTime = event.layoutTime || event.time;
+              const { top, height } = getEventLayout(layoutTime);
+              
+              // TÍNH TOÁN LẠI VỊ TRÍ & CHIỀU CAO
+              // Trừ đi 9px tổng (4.5px trên + 4.5px dưới) để tạo khoảng cách với các đường kẻ ngang
+              const visualTop = top + 4.5; 
+              const visualHeight = height - 9;
+
+              // Nếu chiều cao sau khi trừ còn dương thì mới render (tránh lỗi layout)
+              if (visualHeight <= 0) return null;
+
+              return (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.dayEventCard,
+                    { 
+                      top: visualTop, 
+                      height: visualHeight 
+                    }
+                  ]}
+                  activeOpacity={0.9}
+                  onPress={() => handleEventPress(event)}
+                >
+                  <Text style={styles.dayEventTitle}>{event.title}</Text>
+                  <Text style={styles.dayEventTime}>{event.displayTime || event.time}</Text>
+                  <Text style={styles.dayEventLocation}>{event.location}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
         </View>
-
-      </View>
-    </ScrollView>
+      </ScrollView>
+      
+      {selectedEvent?.originalSession && (
+        <EventDetailModal
+          visible={modalVisible}
+          onClose={() => setModalVisible(false)}
+          eventName={selectedEvent.originalSession.name}
+          startTime={selectedEvent.originalSession.planStartTime}
+          endTime={selectedEvent.originalSession.planEndTime}
+          patrolLogs={selectedEvent.originalSession.patrolLogs || []}
+        />
+      )}
+    </>
   );
 };
 
@@ -253,10 +283,16 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 2,
   },
+  dayEventTime: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
   dayEventLocation: {
     color: '#fff',
-    fontSize: 15,
-    fontWeight: 'bold',
+    fontSize: 14,
+    fontWeight: '500',
     opacity: 0.9,
   },
 });

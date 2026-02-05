@@ -5,6 +5,11 @@ import {
 } from 'react-native';
 import dayjs from 'dayjs';
 import { HOUR_HEIGHT, getEventLayout } from '../../utils/calendar/timeUtils';
+import { ExtendedCalendarEvent } from '../../utils/patrolSessionToEvent';
+import EventDetailModal from '../calendar/EventDetailModal';
+
+// Type alias for backward compatibility
+type CalendarEvent = ExtendedCalendarEvent;
 
 // Kích hoạt layout animation trên Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -13,13 +18,15 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 interface WeekViewProps {
  selectedDateStr: string;
-  eventsData: Record<string, any[]>;
+  eventsData: Record<string, CalendarEvent[]>;
   onWeekChange: (newDateStr: string) => void;
 }
 
 const WeekView: React.FC<WeekViewProps> = ({ selectedDateStr, eventsData, onWeekChange }) => {
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const [currentTime, setCurrentTime] = useState(dayjs());
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   
   // Hàm tính ngày thứ hai của tuần chứa ngày được chọn
   const getMondayOfTheWeek = (dateStr: string) => {
@@ -58,121 +65,143 @@ const WeekView: React.FC<WeekViewProps> = ({ selectedDateStr, eventsData, onWeek
   const currentMinute = currentTime.minute();
   const currentTopPosition = (currentHour + currentMinute / 60) * HOUR_HEIGHT;
 
+  const handleEventPress = (event: CalendarEvent) => {
+    if (event.originalSession) {
+      setSelectedEvent(event);
+      setModalVisible(true);
+    }
+  };
+
   return (
-    <View style={styles.weekViewContainer}>
-      {/* --- HEADER TUẦN (FIXED, RESPONSIVE - Không scroll riêng) --- */}
-      <View style={styles.weekHeader}>
-        <View style={styles.weekHeaderTimePlaceholder} />
-              {weekDates.map((date, index) => {
-                const isSelected = date.format('YYYY-MM-DD') === selectedDateStr;
-                const isToday = date.isSame(dayjs(), 'day');
-                return (
-                  <View key={index} style={styles.weekHeaderDay}> {/* Sử dụng flex: 1 trong styles */}
-                    <Text style={[
-                      styles.weekDayName, 
-                      isToday && styles.weekDayNameToday
-                    ]}>
-                      {(date.format('dd').replace('Th', 'T') || '')}
-                    </Text>
-                    <Text style={[
-                      styles.weekDayNumber,
-                      isSelected && styles.weekDayNumberSelected,
-                      isToday && styles.weekDayNumberToday
-                    ]}>
-                      {(date.format('D') || '')}
-                    </Text>
-                  </View>
-                );
-              })}
-      </View>
-
-      {/* --- BODY TUẦN (Chỉ Scroll Dọc) --- */}
-      <ScrollView 
-        style={styles.weekBodyScroll} 
-        contentContainerStyle={{ paddingBottom: 50 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.weekBodyRow}>
-          
-          {/* CỘT GIỜ */}
-          <View style={styles.timeColumn}>
-            {hours.map((hour) => (
-              <View key={hour} style={[styles.timeRowWrapper, { height: HOUR_HEIGHT }]}>
-                <Text style={styles.timeLabel}>
-                  {hour.toString().padStart(2, '0')}:00
-                </Text>
-              </View>
-            ))}
-          </View>
-
-          {/* CỘT 7 NGÀY (LAYOUT FLEX RESPONSIVE) */}
-          {weekDates.map((date, index) => {
-            const dateStr = date.format('YYYY-MM-DD');
-            const dayEvents = eventsData[dateStr] || [];
-            const isToday = date.isSame(dayjs(), 'day');
-
-            return (
-              <View key={index} style={styles.weekDayColumn}>
-                
-                {/* 1. LƯỚI (GRID) */}
-                {hours.map((hour) => (
-                  <View key={hour} style={[styles.timelineRow, { height: HOUR_HEIGHT }]}>
-                    {/* Đường kẻ dọc giữa các ngày */}
-                    {index < 6 && <View style={styles.weekVerticalDivider} />}
-                    
-                    {/* Điểm giao và Đường kẻ ngang */}
-                    <View style={styles.intersectDot} />
-                    <View style={styles.horizontalGridLine} />
-                  </View>
-                ))}
-
-                {/* 2. ĐƯỜNG GIỜ HIỆN TẠI (CHỈ HIỆN Ở NGÀY HÔM NAY) */}
-                {isToday && (
-                  <View 
-                    style={[
-                      styles.currentTimeIndicator,
-                      { top: currentTopPosition }
-                    ]}
-                  >
-                    <View style={styles.currentTimeDot} />
-                    <View style={styles.currentTimeLine} />
-                  </View>
-                )}
-
-                {/* 3. SỰ KIỆN (FULL TITLE) */}
-                {dayEvents.map((event, idx) => {
-                  if (!event.time) return null;
-                  
-                  const { top, height } = getEventLayout(event.time);
-                  const visualTop = top + 4.5;
-                  const visualHeight = height - 9;
-
-                  if (visualHeight <= 0) return null;
-
+    <>
+      <View style={styles.weekViewContainer}>
+        {/* --- HEADER TUẦN (FIXED, RESPONSIVE - Không scroll riêng) --- */}
+        <View style={styles.weekHeader}>
+          <View style={styles.weekHeaderTimePlaceholder} />
+                {weekDates.map((date, index) => {
+                  const isSelected = date.format('YYYY-MM-DD') === selectedDateStr;
+                  const isToday = date.isSame(dayjs(), 'day');
                   return (
-                    <TouchableOpacity
-                      key={idx}
-                      style={[
-                        styles.dayEventCard,
-                        styles.weekEventCard, 
-                        { top: visualTop, height: visualHeight }
-                      ]}
-                      activeOpacity={0.9}
-                    >
-                      {/* Full Title */}
-                      <Text style={styles.weekEventTitle}>Phiên tuần</Text>
-                      <Text style={styles.weekEventSub}>{event.time}</Text>
-                      <Text style={styles.weekEventLocation}>{event.location}</Text>
-                    </TouchableOpacity>
+                    <View key={index} style={styles.weekHeaderDay}> {/* Sử dụng flex: 1 trong styles */}
+                      <Text style={[
+                        styles.weekDayName, 
+                        isToday && styles.weekDayNameToday
+                      ]}>
+                        {(date.format('dd').replace('Th', 'T') || '')}
+                      </Text>
+                      <Text style={[
+                        styles.weekDayNumber,
+                        isSelected && styles.weekDayNumberSelected,
+                        isToday && styles.weekDayNumberToday
+                      ]}>
+                        {(date.format('D') || '')}
+                      </Text>
+                    </View>
                   );
                 })}
-
-              </View>
-            );
-          })}
         </View>
-      </ScrollView>
-    </View>
+
+        {/* --- BODY TUẦN (Chỉ Scroll Dọc) --- */}
+        <ScrollView 
+          style={styles.weekBodyScroll} 
+          contentContainerStyle={{ paddingBottom: 50 }}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.weekBodyRow}>
+            
+            {/* CỘT GIỜ */}
+            <View style={styles.timeColumn}>
+              {hours.map((hour) => (
+                <View key={hour} style={[styles.timeRowWrapper, { height: HOUR_HEIGHT }]}>
+                  <Text style={styles.timeLabel}>
+                    {hour.toString().padStart(2, '0')}:00
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            {/* CỘT 7 NGÀY (LAYOUT FLEX RESPONSIVE) */}
+            {weekDates.map((date, index) => {
+              const dateStr = date.format('YYYY-MM-DD');
+              const dayEvents = eventsData[dateStr] || [];
+              const isToday = date.isSame(dayjs(), 'day');
+
+              return (
+                <View key={index} style={styles.weekDayColumn}>
+                  
+                  {/* 1. LƯỚI (GRID) */}
+                  {hours.map((hour) => (
+                    <View key={hour} style={[styles.timelineRow, { height: HOUR_HEIGHT }]}>
+                      {/* Đường kẻ dọc giữa các ngày */}
+                      {index < 6 && <View style={styles.weekVerticalDivider} />}
+                      
+                      {/* Điểm giao và Đường kẻ ngang */}
+                      <View style={styles.intersectDot} />
+                      <View style={styles.horizontalGridLine} />
+                    </View>
+                  ))}
+
+                  {/* 2. ĐƯỜNG GIỜ HIỆN TẠI (CHỈ HIỆN Ở NGÀY HÔM NAY) */}
+                  {isToday && (
+                    <View 
+                      style={[
+                        styles.currentTimeIndicator,
+                        { top: currentTopPosition }
+                      ]}
+                    >
+                      <View style={styles.currentTimeDot} />
+                      <View style={styles.currentTimeLine} />
+                    </View>
+                  )}
+
+                  {/* 3. SỰ KIỆN (FULL TITLE) */}
+                  {dayEvents.map((event, idx) => {
+                    if (!event.time) return null;
+                    
+                    const layoutTime = event.layoutTime || event.time;
+                    const { top, height } = getEventLayout(layoutTime);
+                    const visualTop = top + 4.5;
+                    const visualHeight = height - 9;
+
+                    if (visualHeight <= 0) return null;
+
+                    return (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[
+                      styles.dayEventCard,
+                      styles.weekEventCard, 
+                      { top: visualTop, height: visualHeight }
+                    ]}
+                    activeOpacity={0.9}
+                    onPress={() => handleEventPress(event)}
+                  >
+                    {/* Full Title */}
+                    <Text style={styles.weekEventTitle}>{event.title}</Text>
+                    <Text style={styles.weekEventSub}>{event.displayTime || event.time}</Text>
+                    <Text style={styles.weekEventLocation}>{event.location}</Text>
+                  </TouchableOpacity>
+                    );
+                  })}
+
+                </View>
+              );
+            })}
+          </View>
+        </ScrollView>
+      </View>
+      
+      {selectedEvent?.originalSession && (
+        <EventDetailModal
+          visible={modalVisible}
+          onClose={() => setModalVisible(false)}
+          eventName={selectedEvent.originalSession.name}
+          startTime={selectedEvent.originalSession.planStartTime}
+          endTime={selectedEvent.originalSession.planEndTime}
+          patrolLogs={selectedEvent.originalSession.patrolLogs}
+        />
+      )}
+    </>
   );
 };
 
@@ -216,7 +245,7 @@ const styles = StyleSheet.create({
     color: '#8e8e93',
     fontWeight: '600',
     marginBottom: 4,
-  },
+ },
   weekDayNameToday: {
     color: '#359EFF',
   },

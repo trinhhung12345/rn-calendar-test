@@ -1,14 +1,19 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { 
   View, Text, StyleSheet, TouchableOpacity, 
   ScrollView
 } from 'react-native';
 import dayjs from 'dayjs';
+import { ExtendedCalendarEvent } from '../../utils/patrolSessionToEvent';
+import EventDetailModal from '../calendar/EventDetailModal';
+
+// Type alias for backward compatibility
+type CalendarEvent = ExtendedCalendarEvent;
 
 interface MonthViewProps { 
   currentMonth: string, 
   selectedDateStr: string, 
-  eventsData: Record<string, any[]>, 
+  eventsData: Record<string, CalendarEvent[]>, 
   onDayPress: (dateStr: string) => void,
   onMonthChange: (dateStr: string) => void
 }
@@ -22,6 +27,10 @@ const MonthView: React.FC<MonthViewProps> = ({
 }) => {
   // 1. Cấu hình tên thứ (T2 - CN)
   const weekDays = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+  
+  // State for modal
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
   // 2. Tính toán dữ liệu lưới lịch
   const generateGrid = () => {
@@ -72,92 +81,117 @@ const MonthView: React.FC<MonthViewProps> = ({
 
   const daysGrid = generateGrid();
 
+  const handleEventPress = (event: CalendarEvent) => {
+    if (event.originalSession) {
+      setSelectedEvent(event);
+      setModalVisible(true);
+    }
+  };
+
   return (
-    <View style={styles.monthViewContainer}>
-      {/* --- THANH CHỌN THÁNG (CHIPS) --- */}
-      <View style={styles.monthChipsWrapper}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => {
-             const isActive = dayjs(currentMonth).month() + 1 === month;
-             return (
-               <TouchableOpacity 
-                  key={month} 
-                  style={[
-                    styles.chipBtn, 
-                    isActive && styles.chipBtnActive
-                  ]} 
-                  onPress={() => {
-                    // Tính lại date string dựa trên tháng được chọn
-                    const newDateStr = dayjs(currentMonth).month(month - 1).format('YYYY-MM-DD');
-                    onMonthChange(newDateStr);
-                  }}
-               >
-                 <Text style={[styles.chipText, isActive && styles.chipTextActive]}>Thg {month}</Text>
-               </TouchableOpacity>
-             )
-          })}
-        </ScrollView>
-      </View>
+    <>
+      <View style={styles.monthViewContainer}>
+        {/* --- THANH CHỌN THÁNG (CHIPS) --- */}
+        <View style={styles.monthChipsWrapper}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => {
+               const isActive = dayjs(currentMonth).month() + 1 === month;
+               return (
+                 <TouchableOpacity 
+                    key={month} 
+                    style={[
+                      styles.chipBtn, 
+                      isActive && styles.chipBtnActive
+                    ]} 
+                    onPress={() => {
+                      // Tính lại date string dựa trên tháng được chọn
+                      const newDateStr = dayjs(currentMonth).month(month - 1).format('YYYY-MM-DD');
+                      onMonthChange(newDateStr);
+                    }}
+                 >
+                   <Text style={[styles.chipText, isActive && styles.chipTextActive]}>Thg {month}</Text>
+                 </TouchableOpacity>
+               )
+            })}
+          </ScrollView>
+        </View>
 
-      {/* --- HEADER TUẦN (T2 - CN) --- */}
-      <View style={styles.monthWeekHeader}>
-        {weekDays.map((day, index) => (
-          <View key={index} style={styles.monthWeekHeaderItem}>
-            <Text style={styles.monthWeekHeaderText}>{day}</Text>
-          </View>
-        ))}
-      </View>
+        {/* --- HEADER TUẦN (T2 - CN) --- */}
+        <View style={styles.monthWeekHeader}>
+          {weekDays.map((day, index) => (
+            <View key={index} style={styles.monthWeekHeaderItem}>
+              <Text style={styles.monthWeekHeaderText}>{day}</Text>
+            </View>
+          ))}
+        </View>
 
-      {/* --- LƯỚI LỊCH (6 HÀNG) --- */}
-      <View style={styles.monthGrid}>
-        {daysGrid.map((item, index) => {
-          const isSelected = item.dateStr === selectedDateStr;
-          const isToday = item.dateStr === dayjs().format('YYYY-MM-DD');
-          const isCurrentMonth = item.type === 'current';
+        {/* --- LƯỚI LỊCH (6 HÀNG) --- */}
+        <View style={styles.monthGrid}>
+          {daysGrid.map((item, index) => {
+            const isSelected = item.dateStr === selectedDateStr;
+            const isToday = item.dateStr === dayjs().format('YYYY-MM-DD');
+            const isCurrentMonth = item.type === 'current';
 
-          return (
-            <TouchableOpacity
-              key={index}
-              style={[
-                styles.monthDayCell,
-                !isCurrentMonth && styles.monthDayCellOtherMonth,
-                isSelected && styles.monthDayCellSelected
-              ]}
-              onPress={() => onDayPress(item.dateStr)}
-              activeOpacity={0.7}
-            >
-              {/* Số ngày */}
-              <View style={styles.monthDayNumberWrapper}>
-                <Text style={[
-                  styles.monthDayNumber,
-                  !isCurrentMonth && styles.monthDayNumberOtherMonth,
-                  isToday && styles.monthDayNumberToday,
-                  isSelected && styles.monthDayNumberSelected
-                ]}>
-                  {item.dayNum}
-                </Text>
-              </View>
-
-              {/* HIỂN THỊ SỰ KIỆN (CHỈ HIỆN Ở THÁNG HIỆN TẠI) */}
-              {isCurrentMonth && item.events && item.events.length > 0 && (
-                <View style={styles.monthEventContainer}>
-                  {item.events.slice(0, 2).map((evt: any, evtIdx: number) => (
-                    <View key={evtIdx} style={styles.monthEventBox}>
-                      <Text style={styles.monthEventText} numberOfLines={1}>
-                        {evt.time.split(' - ')[0]} Phiên tuần
-                      </Text>
-                    </View>
-                  ))}
-                  {item.events.length > 2 && (
-                    <Text style={styles.monthMoreEvents}>+{item.events.length - 2}</Text>
-                  )}
+            return (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.monthDayCell,
+                  !isCurrentMonth && styles.monthDayCellOtherMonth,
+                  isSelected && styles.monthDayCellSelected
+                ]}
+                onPress={() => onDayPress(item.dateStr)}
+                activeOpacity={0.7}
+              >
+                {/* Số ngày */}
+                <View style={styles.monthDayNumberWrapper}>
+                  <Text style={[
+                    styles.monthDayNumber,
+                    !isCurrentMonth && styles.monthDayNumberOtherMonth,
+                    isToday && styles.monthDayNumberToday,
+                    isSelected && styles.monthDayNumberSelected
+                  ]}>
+                    {item.dayNum}
+                  </Text>
                 </View>
-              )}
-            </TouchableOpacity>
-          );
-        })}
+
+                {/* HIỂN THỊ SỰ KIỆN (CHỈ HIỆN Ở THÁNG HIỆN TẠI) */}
+                {isCurrentMonth && item.events && item.events.length > 0 && (
+                  <View style={styles.monthEventContainer}>
+                    {item.events.slice(0, 2).map((evt: CalendarEvent, evtIdx: number) => (
+                  <TouchableOpacity 
+                    key={evtIdx} 
+                    style={styles.monthEventBox}
+                    onPress={() => handleEventPress(evt)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.monthEventText} numberOfLines={1}>
+                      {evt.title}
+                    </Text>
+                  </TouchableOpacity>
+                    ))}
+                    {item.events.length > 2 && (
+                      <Text style={styles.monthMoreEvents}>+{item.events.length - 2}</Text>
+                    )}
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
-    </View>
+      
+      {selectedEvent?.originalSession && (
+        <EventDetailModal
+          visible={modalVisible}
+          onClose={() => setModalVisible(false)}
+          eventName={selectedEvent.originalSession.name}
+          startTime={selectedEvent.originalSession.planStartTime}
+          endTime={selectedEvent.originalSession.planEndTime}
+          patrolLogs={selectedEvent.originalSession.patrolLogs}
+        />
+      )}
+    </>
   );
 };
 

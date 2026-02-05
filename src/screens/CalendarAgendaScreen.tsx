@@ -1,13 +1,10 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { 
  View, Text, StyleSheet, FlatList, TouchableOpacity, 
-  SafeAreaView, StatusBar, ScrollView, LayoutAnimation, Platform, UIManager, NativeSyntheticEvent, NativeScrollEvent, Dimensions
+  SafeAreaView, StatusBar, ScrollView, LayoutAnimation, Platform, UIManager, ActivityIndicator, Alert
 } from 'react-native';
 
-const windowWidth = Dimensions.get('window').width;
 import { Ionicons } from '@expo/vector-icons';
-// Giả sử bạn dùng icon check, nếu không có lucide thì dùng Ionicons thay thế
-import { Ionicons as IconSet } from '@expo/vector-icons'; 
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
 import { Calendar } from 'react-native-calendars';
@@ -18,10 +15,14 @@ import WeekView from '../components/calendar/WeekView';
 import MonthView from '../components/calendar/MonthView';
 import CalendarHeader from '../components/calendar/CalendarHeader';
 import ViewModeSelector from '../components/calendar/ViewModeSelector';
+import EventDetailModal from '../components/calendar/EventDetailModal';
 
-import { MOCK_EVENTS, VIEW_MODES } from '../utils/calendar/calendarConstants';
-import { HOUR_HEIGHT } from '../utils/calendar/timeUtils';
-import LocaleConfig from '../utils/calendar/localeConfig';
+import { VIEW_MODES } from '../utils/calendar/calendarConstants';
+import { fetchPatrolSessions } from '@services/apiService';
+import { groupPatrolSessionsByDate, ExtendedCalendarEvent } from '@utils/patrolSessionToEvent';
+
+// Type alias for backward compatibility
+type CalendarEvent = ExtendedCalendarEvent;
 
 // Kích hoạt layout animation trên Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -38,13 +39,82 @@ const CalendarAgendaScreen = () => {
   const [isCalendarOpen, setIsCalendarOpen] = useState(true);
   const [currentCalendarDate, setCurrentCalendarDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [currentMonth, setCurrentMonth] = useState<dayjs.Dayjs>(dayjs());
+  const [eventsData, setEventsData] = useState<Record<string, CalendarEvent[]>>({});
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
+
+  // Fetch patrol sessions from API
+  useEffect(() => {
+    const loadEvents = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const sessions = await fetchPatrolSessions();
+        console.log('Fetched sessions:', sessions); // Debug log
+        
+        // Log each session's details including name, start/end times and number of points
+        sessions.forEach((session, index) => {
+          console.log(`Session ${index + 1}:`);
+          console.log(`  Name: ${session.name}`);
+          console.log(`  Plan Start Time: ${session.planStartTime}`);
+          console.log(`  Plan End Time: ${session.planEndTime}`);
+          console.log(`  Number of Points: ${session.numberOfPoints}`);
+          console.log(`  Status: ${session.status}`);
+          
+          if (session.patrolLogs && session.patrolLogs.length > 0) {
+            console.log(`  Patrol Logs:`);
+            session.patrolLogs.forEach((log, logIdx) => {
+              console.log(`    ${logIdx + 1}. Beacon: ${log.beacon.name}, Failed Count: ${log.beacon.failedCount}`);
+            });
+          } else {
+            console.log(`  No patrol logs`);
+          }
+          console.log('---');
+        });
+        
+        console.log(`Total sessions: ${sessions.length}`);
+        
+        const groupedEvents = groupPatrolSessionsByDate(sessions);
+        console.log('Grouped events:', groupedEvents); // Debug log
+        
+        // Count total events across all dates
+        let totalEvents = 0;
+        Object.values(groupedEvents).forEach(events => {
+          totalEvents += events.length;
+          events.forEach(event => {
+            console.log(`Event: ${event.title}, Time: ${event.time}, Display Time: ${event.displayTime || 'N/A'}, Layout Time: ${event.layoutTime || 'N/A'}`);
+            console.log(`Original Session: `, event.originalSession);
+            
+            // Detailed log of patrol logs if available
+            if (event.originalSession && event.originalSession.patrolLogs) {
+              console.log(`  Patrol Logs for ${event.title}:`);
+              event.originalSession.patrolLogs.forEach((log, logIdx) => {
+                console.log(`    ${logIdx + 1}. Beacon: ${log.beacon.name}, Failed Count: ${log.beacon.failedCount}`);
+              });
+            }
+          });
+        });
+        console.log(`Total events created: ${totalEvents}`);
+        
+        setEventsData(groupedEvents);
+      } catch (err) {
+        console.error('Error loading patrol sessions:', err);
+        setError('Không thể tải dữ liệu kiểm tra');
+        Alert.alert('Lỗi', 'Không thể tải dữ liệu kiểm tra. Vui lòng thử lại sau.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadEvents();
+  }, []);
 
   // --- LOGIC MARKED DATES ---
   const markedDates = useMemo(() => {
     let marks: Record<string, any> = {};
-    Object.keys(MOCK_EVENTS).forEach(date => {
+    Object.keys(eventsData).forEach(date => {
       marks[date] = { marked: true, dotColor: 'green' };
     });
 
@@ -57,7 +127,7 @@ const CalendarAgendaScreen = () => {
       marks[selectedDateStr] = { ...(marks[selectedDateStr] || {}), selected: true, selectedColor: '#91D5FF' };
     }
     return marks;
-  }, [selectedDateStr]);
+  }, [selectedDateStr, eventsData]);
 
   // --- LOGIC DATA LIST ---
   // useMemo này tốt, giữ nguyên
@@ -77,12 +147,12 @@ const CalendarAgendaScreen = () => {
         dateStr,
         dayNum: current.format('D'),
         dayOfWeek,
-        events: MOCK_EVENTS[dateStr] || null
+        events: eventsData[dateStr] || null
       });
       current = current.add(1, 'day');
     }
     return daysArray;
-  }, [currentMonth]);
+  }, [currentMonth, eventsData]);
 
   // --- HANDLERS ---
   const handleSelectViewMode = (modeKey: string) => {
@@ -135,7 +205,7 @@ const CalendarAgendaScreen = () => {
 
   // --- 3. TỐI ƯU HÓA: renderItem ---
   // Sử dụng useCallback để không tạo function mới mỗi lần render
-  const renderItem = useCallback(({ item }: any) => {
+ const renderItem = useCallback(({ item }: any) => {
     const isSelected = item.dateStr === selectedDateStr;
     const isToday = item.date.isSame(dayjs(), 'day');
 
@@ -170,6 +240,19 @@ const CalendarAgendaScreen = () => {
     </View>
   );
 
+  // Render loading state
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar backgroundColor="#2962FF" barStyle="dark-content" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#2962FF" />
+          <Text style={styles.loadingText}>Đang tải dữ liệu kiểm tra...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="#2962FF" barStyle="dark-content" />
@@ -188,7 +271,7 @@ const CalendarAgendaScreen = () => {
             theme={{
               todayTextColor: '#1890FF',
               arrowColor: '#1890FF',
-              monthTextColor: '#33',
+              monthTextColor: '#3',
               textMonthFontWeight: 'bold',
             }}
             enableSwipeMonths={true}
@@ -238,13 +321,13 @@ const CalendarAgendaScreen = () => {
         // LỊCH NGÀY (Mới thêm)
         <DayView 
           dateStr={selectedDateStr} 
-          events={MOCK_EVENTS[selectedDateStr] || []} 
+          events={eventsData[selectedDateStr] || []} 
         />
       ) : viewMode === 'week' ? (
         // LỊCH TUẦN (MỚI THÊM)
         <WeekView 
           selectedDateStr={selectedDateStr} 
-          eventsData={MOCK_EVENTS} 
+          eventsData={eventsData} 
           onWeekChange={(newDateStr) => setSelectedDateStr(newDateStr)}
         />
       ) : viewMode === 'month' ? (
@@ -252,7 +335,7 @@ const CalendarAgendaScreen = () => {
         <MonthView 
           currentMonth={currentCalendarDate} // Dùng ngày đang xem trên mini calendar
           selectedDateStr={selectedDateStr}
-          eventsData={MOCK_EVENTS}
+          eventsData={eventsData}
           onDayPress={(dateStr) => {
             setSelectedDateStr(dateStr);
             // Khi chọn ngày ở chế độ tháng, thường ta không cần chuyển ngày calendar
@@ -305,6 +388,18 @@ const styles = StyleSheet.create({
   viewModeItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16 },
   viewModeItemBorder: { borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   viewModeText: { fontSize: 16, color: '#333' },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    marginTop: 50,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
+  },
 });
 
 export default CalendarAgendaScreen;
